@@ -49,7 +49,7 @@ router.get("/hello", function (req, res) {
     greeting: "hello API",
   });
 });
-router.post("/shorturl/new", (req, res) => {
+router.post("/shorturl/", (req, res) => {
   const url = req.body.url;
   const dnsLookup = new Promise((resolve, reject) => {
     if (isUrl(url)) {
