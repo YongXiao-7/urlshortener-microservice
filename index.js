@@ -1,6 +1,6 @@
 "use strict";
 require("dotenv").config({
-  path: "./sample.env",
+  path: "./.env",
 });
 const express = require("express");
 //const mongo = require("mongodb");
@@ -12,6 +12,7 @@ const bodyParser = require("body-parser");
 const dns = require("dns");
 const cors = require("cors");
 const { reject } = require("bluebird");
+const { lstat } = require("fs");
 const app = express();
 const router = express.Router();
 // 添加路由到app上
@@ -27,9 +28,16 @@ app.use(cors());
  */
 // 连接数据库
 mongoose.connect(process.env.MONGOLAB_URI);
+//const short_url_total_init= process.env.SHORT_URL_TOTAL;
 const urlMappingSchema = new mongoose.Schema({
-  original_url: String,
-  short_url: Number,
+  original_url: {
+    type : String,
+    unique : true
+  },
+  short_url: {
+    type : Number,
+    unique : true
+  }
 });
 const UrlMapping = mongoose.model("UrlMapping", urlMappingSchema);
 router.use(
@@ -49,9 +57,10 @@ router.get("/hello", function (req, res) {
     greeting: "hello API",
   });
 });
-router.post("/shorturl/", (req, res) => {
-  const url = req.body.url;
+router.post("/shorturl", (req, res) => {
+ const url = req.body.url;
   const dnsLookup = new Promise((resolve, reject) => {
+ // const url = req.body.url;
     if (isUrl(url)) {
       let result = url.replace(/(^\w+:|^)\/\//, "");
       let string = result.substring(0, result.indexOf("/"));
@@ -66,62 +75,51 @@ router.post("/shorturl/", (req, res) => {
       reject("invalid URL");
     }
   });
-  dnsLookup
+   dnsLookup
     .then(() => {
       // 检查url是否存在
-      return checkIfExist(url);
+       return checkIfExist(url);
     })
-    .then((data) => {
-      if (data.status) {
+     .then((data) => {
+       if (data.status) {
         return res.json({
           original_url: url,
           short_url: data.short_url,
         });
-      } else {
+       } else {
         const shortUrl = shorterUrl();
-        const urlMapping = new UrlMapping({
-          original_url: url,
-          short_url: shortUrl,
-        });
-        /**
-         * 拿到返回的promise数据，必须用prmose.then()方法。
-         */
-        let promise = saveUrlMapping(urlMapping);
-        promise
-          .then((data) => {
-            return res.json({
+        shortUrl.then(shortUrl => {
+            const urlMapping = new UrlMapping({
+            original_url: url,
+            short_url: shortUrl,
+         });
+         let promise = saveUrlMapping(urlMapping);
+         promise
+           .then((data) => {
+          return res.json({
               original_url: data.original_url,
               short_url: data.short_url,
-            });
-          })
-          .catch((err) => {
-            return res.json({
-              error: err,
-            });
+         });
+        })
+         .catch((err) => {
+           return res.json({
+             error: err,
+           });
+         });
+        }).catch(err => {
+          console.log(err);
+          return res.json({
+            error : err
           });
-        /**
-             * [UnhandledPromiseRejection: This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). The promise rejected with the reason "invalid URL".] {
-  code: 'ERR_UNHANDLED_REJECTION'
-  解决方法: promise.then().catch()
-             */
-        // promise.catch((err) => {
-        //     return res.json({
-        //         error : err
-        //     });
-        // });
-      }
-    })
-    .catch((err) => {
-      return res.json({
-        error: err,
-      });
-    });
-  //   dnsLookup.catch((err) => {
-  //      return res.json({
-  //         error : err
-  //      });
-  //   });
-});
+        });
+     }});
+   dnsLookup.catch((err) => {
+     console.log(err);
+    return res.json({
+       error : err
+     });
+   });
+  });
 // 在浏览器访问的时候形参shortUrl前面不加:
 router.get("/shorturl/:shortUrl", (req, res) => {
   let redirectPromise = redirectToOriginalUrl(req.params.shortUrl);
@@ -136,12 +134,6 @@ router.get("/shorturl/:shortUrl", (req, res) => {
 });
 function redirectToOriginalUrl(short_url) {
   return new Promise((resolve, reject) => {
-    // UrlMapping.findOne({
-    //     short_url : short_url
-    // },(err,doc) => {
-    //     if(err || doc === null) return reject(err);
-    //     else return resolve(doc.original_url);
-    // });
     UrlMapping.findOne({
       short_url: short_url,
     })
@@ -159,19 +151,19 @@ function redirectToOriginalUrl(short_url) {
 }
 function checkIfExist(original_url) {
   return new Promise((resolve, reject) => {
-    // UrlMapping.deleteMany({})
-    //           .then((data) => {
-    //             console.log('删除数据成功');
-    //           })
-    //           .catch((err) => {
-    //             console.err('删除数据失败');
-    //           })
+    //  UrlMapping.deleteMany({})
+    //       .then((data) => {
+    //          console.log('删除数据成功');
+    //      })
+    //     .catch((err) => {
+    //      console.err('删除数据失败');
+    //   });
     UrlMapping.findOne({
       original_url: original_url,
     })
       .then((doc) => {
         if (doc === null) {
-          resolve({
+;          resolve({
             status: false,
           });
         } else {
@@ -186,23 +178,6 @@ function checkIfExist(original_url) {
           status: false,
         });
       });
-    // UrlMapping.findOne({ original_url: original_url }, function(err, doc) {
-    //     if (doc === null || err) resolve({ status: false });
-    //     else resolve({ status: true, short_url: doc.short_url });
-    //   });
-    // UrlMapping.findOne({
-    //     original_url : original_url
-    // },(err,doc) => {
-    //     if(doc === null || err){
-    //         resolve({
-    //         status : false
-    //     })}else{
-    //         resolve({
-    //             status : true,
-    //             short_url : doc.short_url
-    //         });
-    //     };
-    // });
   });
 }
 /**
@@ -243,20 +218,6 @@ User.findOne({ name: 'John' })
 //     });
 //   }
 function saveUrlMapping(mapping) {
-  //let v = new Promise((resolve,reject) => {
-  // mapping.save((err,data) => {
-  //     if(err) return reject(err);
-  //     else return resolve(null,data);
-  // });
-  // UrlMapping(mapping)
-  //         .save()
-  //            .then((data) => {
-  //               resolve(data);
-  //            }).catch((err) =>{
-  //               reject(err);
-  //            });
-
-  //});
   return new Promise((resolve, reject) => {
     mapping
       .save()
@@ -267,22 +228,32 @@ function saveUrlMapping(mapping) {
         reject(err);
       });
   });
-  //    return promise.then((doc) => {
-  //         return doc;
-  //     })
-  //     .catch((err) => {
-  //         return err;
-  //     });
 }
+
 function shorterUrl() {
-  let text = 0;
+  let num = 0;
+ // let text = 0;
  // const possible =
    // "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-   let possible = "0123456789"
-  for (var i = 0; i < 5; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
+   //let possible = "0123456789"
+ // for (var i = 0; i < 5; i++) {
+    //text += possible.charAt(Math.floor(Math.random() * possible.length));
+  //}
+//  return text；s
+return new Promise((resolve,reject) =>  {
+  const lastRecord = UrlMapping.findOne().sort({ _id: -1 }).exec();
+    lastRecord.then(lastRecord => {
+      if(lastRecord !== null){
+        resolve(++lastRecord.short_url);
+      }else{
+        resolve(++num);
+      }
+    });
+    lastRecord.catch(err => {
+        console.log(err);
+        reject(err);
+    });
+})
 }
 function isUrl(url) {
   //let regexp = new RegExp("[a-zA-z]+://[^\s]*");
@@ -292,29 +263,3 @@ function isUrl(url) {
 app.listen(port, function () {
   console.log(`Listening on port ${port}`);
 });
-/**
- * 运行scripts(package.json) npm run start或npm run dev
- * 如果命令找不到,就看命令是否安装npm install -g 或 看系统的环境变量PATH
- * 是否有相应命令的所在目录
- * nodemon是一种工具，通过在检测到目录中的文件更改时自动重新启动node应用程序来帮助开发基于
- * node.js的应用程序。一般只在开发时使用，用nodemon代替node来运行代码，这样当代码发生改变时，
- * 进程会自动重启。npm add -g nodemon
- * npm的全程是Node Package Manager,是一个NodeJS包管理和分发工具，已经成为了非官方的发布Node
- * 模块(包)的标准。
- * 2020 年 3 月 17 日，Github 宣布收购 npm，GitHub 现在已经保证 npm 将永远免费。
-node.js 是 javascript 的一种运行环境，是对 Google V8 引擎进行的封装。是一个服务器端的 javascript 的解释器。
-
-安装node.js会自带 npm，同时提供 npx 命令，使用 npx 命令可以直接调用模块命令。
- */
-/**
- * Error: Cannot find module 'bluebird'
- * 解决方法
- * npm install bluebird --save
- * MongoDB 连接报错 Authentication failed
- * 解决方法
- * 当retryWrites设置为true时,表示在写操作发生网络错误时自动重试;当retryWrites设置为false时,则不会自动重试,需要手动处理网络错误
- * {w: “majority”}
-写到多数节点
-使用这个写安全级别，MongoDB只有在数据已经被复制到多数个节点的情况下才会向客户端返回确认
- * uri = mongodb+srv://{processs.env.DB_USER}:${process.env.DB_PASS}@cluster0.az3oh.mongodb.net/myFirstDatabase?retryWrites=true&w=majority
- */
